@@ -469,90 +469,19 @@ func (c *Client) downloadWithRetry(url string) ([]byte, error) {
 func (c *Client) parseHTMLTable(data []byte) (map[string]map[string]string, error) {
 	content := string(tis620.ToUTF8(data))
 
-	trStart := "<tr"
-	trEnd := "</tr>"
-	tdStart := "<td"
-	tdEnd := "</td>"
-	thStart := "<th"
-	thEnd := "</th>"
-
 	result := make(map[string]map[string]string)
-
-	idx := 0
 	rowCount := 0
 
-	for {
-		trPos := strings.Index(content[idx:], trStart)
-		if trPos == -1 {
-			break
-		}
-		trPos += idx
-
-		nextTrPos := strings.Index(content[trPos:], trEnd)
-		if nextTrPos == -1 {
-			break
-		}
-		nextTrPos += trPos + len(trEnd)
-
-		rowStr := content[trPos:nextTrPos]
-
+	for rowStr, ok := extractNextRow(&content); ok; rowStr, ok = extractNextRow(&content) {
 		rowCount++
 		if rowCount <= 2 {
-			idx = nextTrPos
 			continue
 		}
 
-		var cells []string
-		cellIdx := 0
-
-		for {
-			tdPos := strings.Index(rowStr[cellIdx:], tdStart)
-			if tdPos == -1 {
-				tdPos = strings.Index(rowStr[cellIdx:], thStart)
-				if tdPos == -1 {
-					break
-				}
-			}
-			tdPos += cellIdx
-
-			nextTdPos := strings.Index(rowStr[tdPos:], tdEnd)
-			if nextTdPos == -1 {
-				nextTdPos = strings.Index(rowStr[tdPos:], thEnd)
-			}
-			if nextTdPos == -1 {
-				break
-			}
-			nextTdPos += tdPos
-
-			cell := rowStr[tdPos:nextTdPos]
-			cell = cleanHTML(cell)
-
-			if cell != "" {
-				cells = append(cells, cell)
-			}
-
-			cellIdx = nextTdPos
+		cells := extractCells(rowStr)
+		if record, ok := parseRowToRecord(cells); ok {
+			result[record["symbol"]] = record
 		}
-
-		if len(cells) >= 2 {
-			symbol := strings.TrimSpace(cells[0])
-			if symbol != "" {
-				record := make(map[string]string)
-				record["company"] = strings.TrimSpace(cells[1])
-				if len(cells) > 2 {
-					record["market"] = strings.TrimSpace(cells[2])
-				}
-				if len(cells) > 3 {
-					record["industry"] = strings.TrimSpace(cells[3])
-				}
-				if len(cells) > 4 {
-					record["sector"] = strings.TrimSpace(cells[4])
-				}
-				result[symbol] = record
-			}
-		}
-
-		idx = nextTrPos
 	}
 
 	if len(result) == 0 {
@@ -560,6 +489,95 @@ func (c *Client) parseHTMLTable(data []byte) (map[string]map[string]string, erro
 	}
 
 	return result, nil
+}
+
+func extractNextRow(content *string) (string, bool) {
+	trStart := "<tr"
+	trEnd := "</tr>"
+
+	trPos := strings.Index(*content, trStart)
+	if trPos == -1 {
+		return "", false
+	}
+
+	nextTrPos := strings.Index((*content)[trPos:], trEnd)
+	if nextTrPos == -1 {
+		return "", false
+	}
+	nextTrPos += trPos + len(trEnd)
+
+	rowStr := (*content)[trPos:nextTrPos]
+	*content = (*content)[nextTrPos:]
+
+	return rowStr, true
+}
+
+func extractCells(rowStr string) []string {
+	tdStart := "<td"
+	tdEnd := "</td>"
+	thStart := "<th"
+	thEnd := "</th>"
+
+	var cells []string
+	cellIdx := 0
+
+	for {
+		tdPos := strings.Index(rowStr[cellIdx:], tdStart)
+		if tdPos == -1 {
+			tdPos = strings.Index(rowStr[cellIdx:], thStart)
+			if tdPos == -1 {
+				break
+			}
+		}
+		tdPos += cellIdx
+
+		nextTdPos := strings.Index(rowStr[tdPos:], tdEnd)
+		if nextTdPos == -1 {
+			nextTdPos = strings.Index(rowStr[tdPos:], thEnd)
+		}
+		if nextTdPos == -1 {
+			break
+		}
+		nextTdPos += tdPos
+
+		cell := rowStr[tdPos:nextTdPos]
+		cell = cleanHTML(cell)
+
+		if cell != "" {
+			cells = append(cells, cell)
+		}
+
+		cellIdx = nextTdPos
+	}
+
+	return cells
+}
+
+func parseRowToRecord(cells []string) (map[string]string, bool) {
+	if len(cells) < 2 {
+		return nil, false
+	}
+
+	symbol := strings.TrimSpace(cells[0])
+	if symbol == "" {
+		return nil, false
+	}
+
+	record := make(map[string]string)
+	record["symbol"] = symbol
+	record["company"] = strings.TrimSpace(cells[1])
+
+	if len(cells) > 2 {
+		record["market"] = strings.TrimSpace(cells[2])
+	}
+	if len(cells) > 3 {
+		record["industry"] = strings.TrimSpace(cells[3])
+	}
+	if len(cells) > 4 {
+		record["sector"] = strings.TrimSpace(cells[4])
+	}
+
+	return record, true
 }
 
 func cleanHTML(s string) string {
