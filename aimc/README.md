@@ -21,13 +21,13 @@ Example categories:
 - Mixed Fund
 - Money Market Fund
 
-## Why ThaiFA Uses AIMC Data
+## Use Cases
 
-This package enriches fund data from Finnomena with AIMC mappings to provide:
+This package provides AIMC data for applications working with Thai mutual funds:
 
-1. **English fund names** - The Finnomena API returns Thai names; AIMC provides English translations
-2. **Thai fund names** - Stored from AIMC data for display toggle via `UseEnglishNames` setting
-3. **Asset manager names** - Firm names in English
+1. **English fund names** - Complement Finnomena API (which returns Thai names) with English translations
+2. **Thai fund names** - Access both Thai and English versions of fund names
+3. **Asset manager names** - Get firm names in English
 4. **Fund categories** - Standardized classification (e.g., "Equity Fund - Large Cap")
 5. **Category search** - Browse funds by AIMC category 
 
