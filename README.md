@@ -1,7 +1,7 @@
 # thai-market-data
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/jwitmann/thai-market-data.svg)](https://pkg.go.dev/github.com/jwitmann/thai-market-data)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jwitmann/thai-market-data)](https://goreportcard.com/report/github.com/jwitmann/thai-market-data)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jwitmann/thai-market-data?t=1)](https://goreportcard.com/report/github.com/jwitmann/thai-market-data)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 Go package for Thai financial market data sources.
