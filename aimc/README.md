@@ -38,18 +38,7 @@ The mappings are generated from:
 - **AIMC category Excel**: <https://association.aimc.or.th/wp-content/uploads/2025/Aimccategory/AIMC-Category-Q3-2025.xlsx>
 - **Finnomena API**: Used to link fund codes with AIMC category IDs
 
-## Generation
-
-Generate mappings by running:
-```bash
-go run ./cmd/import_aimc/main.go -output ${DATA_DIR}/aimc_mappings.json
-```
-
-```bash
-./bin/import_aimc
-```
-
-The tool fetches fund data from Finnomena API and merges with the AIMC category list to produce the mapping file.
+Data is automatically downloaded and updated via `FetchAndUpdate()`.
 
 ## File Location
 

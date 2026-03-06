@@ -64,8 +64,9 @@ if client.NeedsUpdate() {
 
 ### Data Flow
 
-1. **Import Tool** (`cmd/import_set/main.go`):
-   - Reads `data/SET_listedCompanies_en.csv` and `data/SET_listedCompanies_th.csv`
+1. **Data Loading**:
+   - Downloads HTML tables from SET.or.th (English and Thai versions)
+   - Parses and converts TIS-620 encoding to UTF-8
    - Merges data by symbol (ticker)
    - Creates unique IDs for industries and sectors
    - Outputs `${DATA_DIR}/SET_mappings.json`
@@ -125,26 +126,9 @@ type Sector struct {
 }
 ```
 
-## Import Tool
+## Data Sources
 
-### Usage
-
-```bash
-# Run the import tool
-go run ./cmd/import_set/main.go
-
-# Or specify custom paths
-go run ./cmd/import_set/main.go \
-    -en data/SET_listedCompanies_en.csv \
-    -th data/SET_listedCompanies_th.csv \
-    -o ${DATA_DIR}/SET_mappings.json
-```
-
-## Sources
-
-### CSV Format
-
-The import tool expects CSV files with the following columns:
+The SET client downloads data directly from SET.or.th. The HTML tables contain the following fields:
 
 **English version (`SET_listedCompanies_en.csv`):**
 
