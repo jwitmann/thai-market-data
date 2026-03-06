@@ -1,5 +1,9 @@
 # thai-market-data
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/jwitmann/thai-market-data.svg)](https://pkg.go.dev/github.com/jwitmann/thai-market-data)
+[![Go Report Card](https://goreportcard.com/badge/github.com/jwitmann/thai-market-data)](https://goreportcard.com/report/github.com/jwitmann/thai-market-data)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+
 Go package for Thai financial market data sources.
 
 ## Packages
@@ -80,6 +84,25 @@ fmt.Println(company.NameEN)
 - [AIMC Package Documentation](aimc/README.md)
 - [SET Package Documentation](set/README.md)
 
+## API Reference
+
+See [API.md](API.md) for complete API documentation with all available methods.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+Please ensure your code passes all tests:
+```bash
+go test ./...
+```
+
 ## License
 
-MIT
+MIT License - see [LICENSE](LICENSE) file for details
