@@ -5,6 +5,9 @@
 *.so
 *.dylib
 
+# CLI tools
+aimc-supplement
+
 # Test binary, built with `go test -c`
 *.test
 
