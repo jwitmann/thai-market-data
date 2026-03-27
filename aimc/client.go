@@ -16,9 +16,26 @@ import (
 
 // Client provides AIMC (Association of Investment Management Companies) data lookup
 type Client struct {
-	dataDir      string
-	mappings     *Mappings
-	mappingsPath string
+	dataDir        string
+	mappings       *Mappings
+	mappingsPath   string
+	supplement     *Supplement
+	supplementPath string
+}
+
+// Supplement stores user-defined overrides for AIMC mappings
+// This allows local supplementation of fund-to-company and fund-to-category mappings
+type Supplement struct {
+	Categories map[string]string             `json:"categories"` // category_id -> category_name
+	Funds      map[string]SupplementFundInfo `json:"funds"`      // fund_code -> fund info
+}
+
+// SupplementFundInfo represents supplement data for a single fund
+type SupplementFundInfo struct {
+	LegalName      string `json:"legal_name,omitempty"`
+	ThaiName       string `json:"thai_name,omitempty"`
+	FirmName       string `json:"firm_name"`                  // Required: company name
+	AIMCCategoryID string `json:"aimc_category_id,omitempty"` // Optional: category ID
 }
 
 // Mappings stores AIMC category and fund information
@@ -46,6 +63,15 @@ func NewClient(dataDir string) (*Client, error) {
 		return nil, fmt.Errorf("failed to load AIMC mappings: %w", err)
 	}
 
+	// Load supplement (optional - don't fail if missing)
+	if err := client.loadSupplement(); err != nil {
+		log.Printf("[AIMC] No supplement file found or failed to load: %v", err)
+		client.supplement = &Supplement{
+			Categories: make(map[string]string),
+			Funds:      make(map[string]SupplementFundInfo),
+		}
+	}
+
 	return client, nil
 }
 
@@ -66,8 +92,46 @@ func (c *Client) loadMappings() error {
 	return nil
 }
 
+// loadSupplement loads supplement data from JSON file (optional)
+func (c *Client) loadSupplement() error {
+	c.supplementPath = filepath.Join(c.dataDir, "company_supplement.json")
+	data, err := os.ReadFile(c.supplementPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("supplement file not found: %w", err)
+		}
+		return fmt.Errorf("failed to read company_supplement.json: %w", err)
+	}
+
+	var supplement Supplement
+	if err := json.Unmarshal(data, &supplement); err != nil {
+		return fmt.Errorf("failed to parse company_supplement.json: %w", err)
+	}
+
+	// Initialize maps if nil
+	if supplement.Categories == nil {
+		supplement.Categories = make(map[string]string)
+	}
+	if supplement.Funds == nil {
+		supplement.Funds = make(map[string]SupplementFundInfo)
+	}
+
+	c.supplement = &supplement
+	log.Printf("[AIMC] Loaded supplement with %d funds and %d categories",
+		len(supplement.Funds), len(supplement.Categories))
+	return nil
+}
+
 // GetCategoryName returns the category name for a given category ID
+// Checks supplement first, then falls back to AIMC mappings
 func (c *Client) GetCategoryName(categoryID string) string {
+	// Check supplement first
+	if c.supplement != nil {
+		if name, ok := c.supplement.Categories[categoryID]; ok {
+			return name
+		}
+	}
+	// Fall back to AIMC mappings
 	if c.mappings == nil {
 		return ""
 	}
@@ -75,7 +139,20 @@ func (c *Client) GetCategoryName(categoryID string) string {
 }
 
 // GetFundInfo returns legal name, thai name, firm name, and category for a fund code
+// Checks supplement first, then falls back to AIMC mappings
 func (c *Client) GetFundInfo(fundCode string) (legalName, thaiName, firmName, category string) {
+	// Check supplement first
+	if c.supplement != nil {
+		if info, ok := c.supplement.Funds[fundCode]; ok {
+			legalName = info.LegalName
+			thaiName = info.ThaiName
+			firmName = info.FirmName
+			category = c.GetCategoryName(info.AIMCCategoryID)
+			return
+		}
+	}
+
+	// Fall back to AIMC mappings
 	if c.mappings == nil {
 		return "", "", "", ""
 	}
@@ -92,96 +169,262 @@ func (c *Client) GetFundInfo(fundCode string) (legalName, thaiName, firmName, ca
 	return
 }
 
-// GetCategories returns all available category names
+// GetCategories returns all available category names from both AIMC and supplement
 func (c *Client) GetCategories() []string {
-	if c.mappings == nil {
-		return nil
+	seen := make(map[string]bool)
+	var categories []string
+
+	// Add supplement categories first
+	if c.supplement != nil {
+		for _, name := range c.supplement.Categories {
+			if !seen[name] {
+				seen[name] = true
+				categories = append(categories, name)
+			}
+		}
 	}
 
-	categories := make([]string, 0, len(c.mappings.Categories))
-	for _, name := range c.mappings.Categories {
-		categories = append(categories, name)
+	// Add AIMC categories
+	if c.mappings != nil {
+		for _, name := range c.mappings.Categories {
+			if !seen[name] {
+				seen[name] = true
+				categories = append(categories, name)
+			}
+		}
 	}
+
 	return categories
 }
 
 // GetFundsByCategory returns all fund codes in a given category
+// Merges results from both AIMC and supplement
 func (c *Client) GetFundsByCategory(categoryName string) []string {
-	if c.mappings == nil {
-		return nil
-	}
-
-	// Find category ID from name
-	var categoryID string
-	for id, name := range c.mappings.Categories {
-		if name == categoryName {
-			categoryID = id
-			break
-		}
-	}
-
-	if categoryID == "" {
-		return nil
-	}
-
-	// Find all funds in this category
+	seen := make(map[string]bool)
 	var funds []string
-	for code, info := range c.mappings.Funds {
-		if info.AIMCCategoryID == categoryID {
-			funds = append(funds, code)
+
+	// Check supplement first
+	if c.supplement != nil {
+		for id, name := range c.supplement.Categories {
+			if name == categoryName {
+				// Find all funds in this category from supplement
+				for code, info := range c.supplement.Funds {
+					if info.AIMCCategoryID == id && !seen[code] {
+						seen[code] = true
+						funds = append(funds, code)
+					}
+				}
+				break
+			}
 		}
 	}
+
+	// Check AIMC mappings
+	if c.mappings != nil {
+		// Find category ID from name
+		var categoryID string
+		for id, name := range c.mappings.Categories {
+			if name == categoryName {
+				categoryID = id
+				break
+			}
+		}
+
+		// Find all funds in this category
+		if categoryID != "" {
+			for code, info := range c.mappings.Funds {
+				if info.AIMCCategoryID == categoryID && !seen[code] {
+					seen[code] = true
+					funds = append(funds, code)
+				}
+			}
+		}
+	}
+
 	return funds
 }
 
 // GetFundsByCompany returns all fund codes for a given company/firm
+// Merges results from both AIMC and supplement
 func (c *Client) GetFundsByCompany(companyName string) []string {
-	if c.mappings == nil {
-		return nil
-	}
-
-	companyUpper := strings.ToUpper(companyName)
+	seen := make(map[string]bool)
 	var funds []string
-	for code, info := range c.mappings.Funds {
-		if strings.ToUpper(info.FirmName) == companyUpper {
-			funds = append(funds, code)
+	companyUpper := strings.ToUpper(companyName)
+
+	// Check supplement first
+	if c.supplement != nil {
+		for code, info := range c.supplement.Funds {
+			if strings.ToUpper(info.FirmName) == companyUpper && !seen[code] {
+				seen[code] = true
+				funds = append(funds, code)
+			}
 		}
 	}
+
+	// Check AIMC mappings
+	if c.mappings != nil {
+		for code, info := range c.mappings.Funds {
+			if strings.ToUpper(info.FirmName) == companyUpper && !seen[code] {
+				seen[code] = true
+				funds = append(funds, code)
+			}
+		}
+	}
+
 	return funds
 }
 
 // GetFundsByCompanyFuzzy returns fund codes for partial company name matches
+// Merges results from both AIMC and supplement
 func (c *Client) GetFundsByCompanyFuzzy(partialName string) []string {
-	if c.mappings == nil {
-		return nil
-	}
-
-	partialUpper := strings.ToUpper(partialName)
+	seen := make(map[string]bool)
 	var funds []string
-	for code, info := range c.mappings.Funds {
-		if strings.Contains(strings.ToUpper(info.FirmName), partialUpper) {
-			funds = append(funds, code)
+	partialUpper := strings.ToUpper(partialName)
+
+	// Check supplement first
+	if c.supplement != nil {
+		for code, info := range c.supplement.Funds {
+			if strings.Contains(strings.ToUpper(info.FirmName), partialUpper) && !seen[code] {
+				seen[code] = true
+				funds = append(funds, code)
+			}
 		}
 	}
+
+	// Check AIMC mappings
+	if c.mappings != nil {
+		for code, info := range c.mappings.Funds {
+			if strings.Contains(strings.ToUpper(info.FirmName), partialUpper) && !seen[code] {
+				seen[code] = true
+				funds = append(funds, code)
+			}
+		}
+	}
+
 	return funds
 }
 
-// GetAllFunds returns all fund codes
+// GetAllFunds returns all fund codes from both AIMC and supplement
 func (c *Client) GetAllFunds() []string {
-	if c.mappings == nil {
-		return nil
+	seen := make(map[string]bool)
+	var funds []string
+
+	// Add supplement funds first
+	if c.supplement != nil {
+		for code := range c.supplement.Funds {
+			if !seen[code] {
+				seen[code] = true
+				funds = append(funds, code)
+			}
+		}
 	}
 
-	funds := make([]string, 0, len(c.mappings.Funds))
-	for code := range c.mappings.Funds {
-		funds = append(funds, code)
+	// Add AIMC funds
+	if c.mappings != nil {
+		for code := range c.mappings.Funds {
+			if !seen[code] {
+				seen[code] = true
+				funds = append(funds, code)
+			}
+		}
 	}
+
 	return funds
 }
 
 // GetMappings returns the raw mappings (for advanced use)
 func (c *Client) GetMappings() *Mappings {
 	return c.mappings
+}
+
+// GetSupplement returns the current supplement data
+func (c *Client) GetSupplement() *Supplement {
+	return c.supplement
+}
+
+// HasSupplement checks if a fund code exists in the supplement
+func (c *Client) HasSupplement(fundCode string) bool {
+	if c.supplement == nil {
+		return false
+	}
+	_, ok := c.supplement.Funds[fundCode]
+	return ok
+}
+
+// SaveSupplementEntry adds or updates a supplement entry and persists to disk
+func (c *Client) SaveSupplementEntry(fundCode, firmName, categoryID, legalName, thaiName string) error {
+	if c.supplement == nil {
+		c.supplement = &Supplement{
+			Categories: make(map[string]string),
+			Funds:      make(map[string]SupplementFundInfo),
+		}
+	}
+
+	// Update fund entry
+	c.supplement.Funds[fundCode] = SupplementFundInfo{
+		LegalName:      legalName,
+		ThaiName:       thaiName,
+		FirmName:       firmName,
+		AIMCCategoryID: categoryID,
+	}
+
+	// Save to disk
+	return c.saveSupplement()
+}
+
+// DeleteSupplementEntry removes a fund from the supplement and persists to disk
+func (c *Client) DeleteSupplementEntry(fundCode string) error {
+	if c.supplement == nil {
+		return nil
+	}
+
+	delete(c.supplement.Funds, fundCode)
+	return c.saveSupplement()
+}
+
+// saveSupplement persists the supplement to disk
+func (c *Client) saveSupplement() error {
+	if c.supplement == nil {
+		return nil
+	}
+
+	data, err := json.MarshalIndent(c.supplement, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal supplement: %w", err)
+	}
+
+	if c.supplementPath == "" {
+		c.supplementPath = filepath.Join(c.dataDir, "company_supplement.json")
+	}
+
+	if err := os.WriteFile(c.supplementPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write supplement file: %w", err)
+	}
+
+	return nil
+}
+
+// GetCategoryIDByName finds a category ID by its name (checks supplement first)
+func (c *Client) GetCategoryIDByName(categoryName string) string {
+	// Check supplement first
+	if c.supplement != nil {
+		for id, name := range c.supplement.Categories {
+			if name == categoryName {
+				return id
+			}
+		}
+	}
+
+	// Check AIMC mappings
+	if c.mappings != nil {
+		for id, name := range c.mappings.Categories {
+			if name == categoryName {
+				return id
+			}
+		}
+	}
+
+	return ""
 }
 
 // AIMCMetadata contains metadata about the AIMC data source

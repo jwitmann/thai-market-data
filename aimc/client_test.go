@@ -1,6 +1,7 @@
 package aimc
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -283,4 +284,240 @@ func TestClientNeedsUpdate(t *testing.T) {
 	// Should return true when no metadata exists
 	// Note: This tests the internal logic, may need adjustment based on actual implementation
 	_ = client.NeedsUpdate()
+}
+
+func TestClient_SupplementMerge(t *testing.T) {
+	// Create temp directory
+	tmpDir := t.TempDir()
+
+	// Create AIMC mappings file
+	mappings := Mappings{
+		Categories: map[string]string{
+			"CAT1": "Category One",
+			"CAT2": "Category Two",
+		},
+		Funds: map[string]FundInfo{
+			"FUND-A": {
+				LegalName:      "Fund A Legal",
+				ThaiName:       "กองทุน ก",
+				FirmName:       "Company A",
+				AIMCCategoryID: "CAT1",
+			},
+			"FUND-B": {
+				LegalName:      "Fund B Legal",
+				ThaiName:       "กองทุน ข",
+				FirmName:       "Company B",
+				AIMCCategoryID: "CAT2",
+			},
+		},
+	}
+
+	mappingsData, _ := json.MarshalIndent(mappings, "", "  ")
+	mappingsPath := filepath.Join(tmpDir, "aimc_mappings.json")
+	if err := os.WriteFile(mappingsPath, mappingsData, 0644); err != nil {
+		t.Fatalf("Failed to write mappings: %v", err)
+	}
+
+	// Test without supplement
+	client, err := NewClient(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Test GetFundInfo - should return AIMC data
+	legal, thai, firm, cat := client.GetFundInfo("FUND-A")
+	if firm != "Company A" || cat != "Category One" {
+		t.Errorf("GetFundInfo(FUND-A) = %s, %s, %s, %s; want Company A, _, _, Category One", legal, thai, firm, cat)
+	}
+
+	// Now create supplement file
+	supplement := Supplement{
+		Categories: map[string]string{
+			"CAT3": "Category Three",
+		},
+		Funds: map[string]SupplementFundInfo{
+			"FUND-C": {
+				LegalName:      "Fund C Legal",
+				ThaiName:       "กองทุน ค",
+				FirmName:       "Company C",
+				AIMCCategoryID: "CAT3",
+			},
+			"FUND-A": {
+				LegalName:      "Fund A Override",
+				ThaiName:       "กองทุน ก Override",
+				FirmName:       "Company A Override",
+				AIMCCategoryID: "CAT2",
+			},
+		},
+	}
+
+	supplementData, _ := json.MarshalIndent(supplement, "", "  ")
+	supplementPath := filepath.Join(tmpDir, "company_supplement.json")
+	if err := os.WriteFile(supplementPath, supplementData, 0644); err != nil {
+		t.Fatalf("Failed to write supplement: %v", err)
+	}
+
+	// Create new client with supplement
+	client2, err := NewClient(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create client with supplement: %v", err)
+	}
+
+	// Test GetFundInfo with override - supplement should take precedence
+	legal, thai, firm, cat = client2.GetFundInfo("FUND-A")
+	if firm != "Company A Override" {
+		t.Errorf("GetFundInfo(FUND-A) firm = %s; want Company A Override", firm)
+	}
+	if cat != "Category Two" {
+		t.Errorf("GetFundInfo(FUND-A) category = %s; want Category Two", cat)
+	}
+
+	// Test GetFundInfo for supplement-only fund
+	legal, thai, firm, cat = client2.GetFundInfo("FUND-C")
+	if firm != "Company C" || cat != "Category Three" {
+		t.Errorf("GetFundInfo(FUND-C) = %s, %s, %s, %s; want Company C, _, _, Category Three", legal, thai, firm, cat)
+	}
+
+	// Test GetAllFunds - should include both sources
+	allFunds := client2.GetAllFunds()
+	if len(allFunds) != 3 {
+		t.Errorf("GetAllFunds() returned %d funds; want 3", len(allFunds))
+	}
+
+	// Test GetFundsByCompany
+	companyCFunds := client2.GetFundsByCompany("Company C")
+	if len(companyCFunds) != 1 || companyCFunds[0] != "FUND-C" {
+		t.Errorf("GetFundsByCompany(Company C) = %v; want [FUND-C]", companyCFunds)
+	}
+
+	// Test GetFundsByCompanyFuzzy
+	fuzzyFunds := client2.GetFundsByCompanyFuzzy("Override")
+	if len(fuzzyFunds) != 1 || fuzzyFunds[0] != "FUND-A" {
+		t.Errorf("GetFundsByCompanyFuzzy(Override) = %v; want [FUND-A]", fuzzyFunds)
+	}
+
+	// Test GetCategories - should include all
+	categories := client2.GetCategories()
+	if len(categories) != 3 {
+		t.Errorf("GetCategories() returned %d categories; want 3", len(categories))
+	}
+
+	// Test HasSupplement
+	if !client2.HasSupplement("FUND-A") {
+		t.Error("HasSupplement(FUND-A) = false; want true")
+	}
+	if !client2.HasSupplement("FUND-C") {
+		t.Error("HasSupplement(FUND-C) = false; want true")
+	}
+	if client2.HasSupplement("FUND-B") {
+		t.Error("HasSupplement(FUND-B) = true; want false")
+	}
+}
+
+func TestClient_SupplementManagement(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create AIMC mappings
+	mappings := Mappings{
+		Categories: map[string]string{
+			"CAT1": "Category One",
+		},
+		Funds: map[string]FundInfo{
+			"FUND-A": {
+				FirmName:       "Company A",
+				AIMCCategoryID: "CAT1",
+			},
+		},
+	}
+
+	mappingsData, _ := json.MarshalIndent(mappings, "", "  ")
+	mappingsPath := filepath.Join(tmpDir, "aimc_mappings.json")
+	os.WriteFile(mappingsPath, mappingsData, 0644)
+
+	client, err := NewClient(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Test SaveSupplementEntry
+	err = client.SaveSupplementEntry("NEW-FUND", "New Company", "CAT1", "New Legal", "New Thai")
+	if err != nil {
+		t.Fatalf("SaveSupplementEntry failed: %v", err)
+	}
+
+	// Verify entry was saved
+	if !client.HasSupplement("NEW-FUND") {
+		t.Error("HasSupplement(NEW-FUND) = false after save")
+	}
+
+	_, _, firm, _ := client.GetFundInfo("NEW-FUND")
+	if firm != "New Company" {
+		t.Errorf("GetFundInfo(NEW-FUND) firm = %s; want New Company", firm)
+	}
+
+	// Verify file was created
+	supplementPath := filepath.Join(tmpDir, "company_supplement.json")
+	if _, err := os.Stat(supplementPath); os.IsNotExist(err) {
+		t.Error("Supplement file was not created")
+	}
+
+	// Test DeleteSupplementEntry
+	err = client.DeleteSupplementEntry("NEW-FUND")
+	if err != nil {
+		t.Fatalf("DeleteSupplementEntry failed: %v", err)
+	}
+
+	if client.HasSupplement("NEW-FUND") {
+		t.Error("HasSupplement(NEW-FUND) = true after delete")
+	}
+}
+
+func TestClient_GetCategoryIDByName(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	mappings := Mappings{
+		Categories: map[string]string{
+			"CAT1": "Category One",
+		},
+		Funds: map[string]FundInfo{},
+	}
+
+	mappingsData, _ := json.MarshalIndent(mappings, "", "  ")
+	mappingsPath := filepath.Join(tmpDir, "aimc_mappings.json")
+	os.WriteFile(mappingsPath, mappingsData, 0644)
+
+	supplement := Supplement{
+		Categories: map[string]string{
+			"CAT2": "Category Two",
+			"CAT1": "Category One Override", // Should not be used since we check supplement first
+		},
+		Funds: map[string]SupplementFundInfo{},
+	}
+
+	supplementData, _ := json.MarshalIndent(supplement, "", "  ")
+	supplementPath := filepath.Join(tmpDir, "company_supplement.json")
+	os.WriteFile(supplementPath, supplementData, 0644)
+
+	client, err := NewClient(tmpDir)
+	if err != nil {
+		t.Fatalf("Failed to create client: %v", err)
+	}
+
+	// Test getting category ID from supplement
+	catID := client.GetCategoryIDByName("Category Two")
+	if catID != "CAT2" {
+		t.Errorf("GetCategoryIDByName(Category Two) = %s; want CAT2", catID)
+	}
+
+	// Test getting category ID from AIMC
+	catID = client.GetCategoryIDByName("Category One")
+	if catID != "CAT1" {
+		t.Errorf("GetCategoryIDByName(Category One) = %s; want CAT1", catID)
+	}
+
+	// Test non-existent category
+	catID = client.GetCategoryIDByName("Non Existent")
+	if catID != "" {
+		t.Errorf("GetCategoryIDByName(Non Existent) = %s; want empty", catID)
+	}
 }
