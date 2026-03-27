@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **AIMC Package**: Supplement system for local fund-to-company overrides
+  - `Supplement` and `SupplementFundInfo` structs for local overrides
+  - `SaveSupplementEntry()` - Add or update supplement entries
+  - `DeleteSupplementEntry()` - Remove supplement entries
+  - `HasSupplement()` - Check if fund has supplement override
+  - `GetSupplement()` - Retrieve supplement entry
+  - `GetAllCompanies()` - List all companies including supplement funds
+  - `GetCategoryIDByName()` - Reverse lookup category by name
+  - Automatic merge of AIMC + supplement data (supplement takes precedence)
+  - Graceful degradation when supplement file is missing
+
+### Changed
+- All AIMC lookup methods now merge supplement data automatically
+- `GetFundsByCompany()` and `GetFundsByCompanyFuzzy()` include supplement funds
+
 ## [1.0.0] - 2024-03-06
 
 ### Added
@@ -33,4 +51,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test coverage for both packages
 - Complete API documentation (621 lines)
 
+[Unreleased]: https://github.com/jwitmann/thai-market-data/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/jwitmann/thai-market-data/releases/tag/v1.0.0

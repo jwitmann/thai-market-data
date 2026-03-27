@@ -44,3 +44,68 @@ Data is automatically downloaded and updated via `FetchAndUpdate()`.
 
 - **Generated mappings**: `${DATA_DIR}/aimc_mappings.json`
 - **Source CSV**: `data/aimc_data.csv` (in repository)
+- **Supplement overrides**: `${DATA_DIR}/company_supplement.json` (optional)
+
+## Supplement System
+
+The supplement system allows you to add or override fund-to-company mappings locally without modifying the AIMC data.
+
+### Use Cases
+
+- **New funds** not yet in AIMC quarterly data
+- **Missing company mappings** for funds that exist in AIMC but lack firm information
+- **Custom categorizations** for special cases
+
+### How It Works
+
+1. Create a `company_supplement.json` file in your data directory
+2. The client automatically loads and merges supplement data with AIMC data
+3. **Supplement takes precedence** - overrides any conflicting AIMC entries
+
+### Supplement File Format
+
+```json
+{
+  "TDEFENSE": {
+    "fund_code": "TDEFENSE",
+    "company": "TISCO Asset Management Co., Ltd.",
+    "category": "Equity Fund - Sector",
+    "source": "manual"
+  },
+  "TGOLD-UH": {
+    "fund_code": "TGOLD-UH",
+    "company": "TISCO Asset Management Co., Ltd.",
+    "category": "Equity Fund - Sector",
+    "source": "auto-detected"
+  }
+}
+```
+
+### Programmatic Management
+
+```go
+// Add or update a supplement entry
+client.SaveSupplementEntry("NEWFUND", "Company Name", "Category Name")
+
+// Delete a supplement entry
+client.DeleteSupplementEntry("NEWFUND")
+
+// Check if fund has supplement override
+if client.HasSupplement("NEWFUND") {
+    info := client.GetSupplement("NEWFUND")
+    fmt.Println(info.Company)
+}
+
+// Get all companies (including supplement funds)
+companies := client.GetAllCompanies()
+```
+
+### Company Name Matching
+
+When adding supplements, use the **exact company name** as it appears in AIMC data:
+
+- ✅ `TISCO Asset Management Co., Ltd.`
+- ❌ `TISCO` (too short)
+- ❌ `TISCO Asset Management` (missing "Co., Ltd.")
+
+The client provides `GetAllCompanies()` to list all available company names for reference.

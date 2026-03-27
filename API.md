@@ -32,6 +32,17 @@ type FundInfo struct {
     AIMCCategoryID string // AIMC category identifier
     AIMCCategory   string // Human-readable category name
 }
+
+type Supplement struct {
+    Funds map[string]SupplementFundInfo // fund_code -> supplement_info
+}
+
+type SupplementFundInfo struct {
+    FundCode string // Fund code (e.g., "TDEFENSE")
+    Company  string // Asset management company name
+    Category string // AIMC category name
+    Source   string // Source of entry (e.g., "manual", "auto-detected")
+}
 ```
 
 ### Constructor
@@ -224,6 +235,118 @@ if client.NeedsUpdate() {
     if err := client.FetchAndUpdate(); err != nil {
         log.Printf("Update failed: %v", err)
     }
+}
+```
+
+#### GetAllCompanies
+
+```go
+func (c *Client) GetAllCompanies() []string
+```
+
+Returns a sorted list of all unique company names from both AIMC data and supplement entries.
+
+**Example:**
+```go
+companies := client.GetAllCompanies()
+for _, company := range companies {
+    fmt.Println(company)
+}
+// Output: "KASIKORN ASSET MANAGEMENT Co., Ltd."
+//         "TISCO Asset Management Co., Ltd."
+//         ...
+```
+
+---
+
+### Supplement Methods
+
+#### SaveSupplementEntry
+
+```go
+func (c *Client) SaveSupplementEntry(fundCode, company, category string) error
+```
+
+Adds or updates a supplement entry for a fund. The supplement takes precedence over AIMC data.
+
+**Parameters:**
+- `fundCode`: Fund code (e.g., "TDEFENSE")
+- `company`: Exact company name as it appears in AIMC data
+- `category`: Category name (e.g., "Equity Fund - Sector")
+
+**Returns:**
+- `error`: If supplement cannot be saved
+
+**Example:**
+```go
+err := client.SaveSupplementEntry("TDEFENSE", 
+    "TISCO Asset Management Co., Ltd.", 
+    "Equity Fund - Sector")
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+#### DeleteSupplementEntry
+
+```go
+func (c *Client) DeleteSupplementEntry(fundCode string) error
+```
+
+Removes a supplement entry for a fund.
+
+**Example:**
+```go
+err := client.DeleteSupplementEntry("TDEFENSE")
+```
+
+#### HasSupplement
+
+```go
+func (c *Client) HasSupplement(fundCode string) bool
+```
+
+Checks if a fund has a supplement override.
+
+**Example:**
+```go
+if client.HasSupplement("TDEFENSE") {
+    fmt.Println("Fund has supplement override")
+}
+```
+
+#### GetSupplement
+
+```go
+func (c *Client) GetSupplement(fundCode string) (*SupplementFundInfo, bool)
+```
+
+Retrieves the supplement entry for a fund.
+
+**Returns:**
+- `*SupplementFundInfo`: Supplement data
+- `bool`: Whether supplement exists
+
+**Example:**
+```go
+if info, ok := client.GetSupplement("TDEFENSE"); ok {
+    fmt.Printf("Company: %s\n", info.Company)
+    fmt.Printf("Category: %s\n", info.Category)
+}
+```
+
+#### GetCategoryIDByName
+
+```go
+func (c *Client) GetCategoryIDByName(categoryName string) (string, bool)
+```
+
+Performs a reverse lookup to find the category ID from a category name.
+
+**Example:**
+```go
+if categoryID, ok := client.GetCategoryIDByName("Equity Fund - Large Cap"); ok {
+    fmt.Printf("Category ID: %s\n", categoryID)
 }
 ```
 
