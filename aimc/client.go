@@ -332,6 +332,34 @@ func (c *Client) GetAllFunds() []string {
 	return funds
 }
 
+// GetAllCompanies returns all unique company names from AIMC and supplement data
+func (c *Client) GetAllCompanies() []string {
+	seen := make(map[string]bool)
+	var companies []string
+
+	// Add supplement company names first
+	if c.supplement != nil {
+		for _, fund := range c.supplement.Funds {
+			if fund.FirmName != "" && !seen[fund.FirmName] {
+				seen[fund.FirmName] = true
+				companies = append(companies, fund.FirmName)
+			}
+		}
+	}
+
+	// Add AIMC company names
+	if c.mappings != nil {
+		for _, fund := range c.mappings.Funds {
+			if fund.FirmName != "" && !seen[fund.FirmName] {
+				seen[fund.FirmName] = true
+				companies = append(companies, fund.FirmName)
+			}
+		}
+	}
+
+	return companies
+}
+
 // GetMappings returns the raw mappings (for advanced use)
 func (c *Client) GetMappings() *Mappings {
 	return c.mappings
