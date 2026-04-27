@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **SET Package**: Space-normalized company name matching for portfolio holdings
+  - `GetByName()` now tries space-normalized exact match after substring match
+  - Handles portfolio data where Thai names have different spacing than SET official records
+  - Example: `บริษัทเดลต้า อีเลคโทรนิคส์(ประเทศไทย) จำกัด(มหาชน)` now matches `บริษัท เดลต้า อีเลคโทรนิคส์ (ประเทศไทย) จำกัด (มหาชน)`
 - **AIMC Package**: Supplement system for local fund-to-company overrides
   - `Supplement` and `SupplementFundInfo` structs for local overrides
   - `SaveSupplementEntry()` - Add or update supplement entries

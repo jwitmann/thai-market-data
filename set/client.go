@@ -304,6 +304,18 @@ func (c *Client) GetByName(name string) (*Company, error) {
 		}
 	}
 
+	// Try space-normalized match
+	// Handles portfolio names with different spacing than SET official data
+	searchNoSpaces := removeAllSpaces(nameUpper)
+	for _, company := range c.setData.Companies {
+		if removeAllSpaces(strings.ToUpper(company.NameEN)) == searchNoSpaces {
+			return &company, nil
+		}
+		if removeAllSpaces(strings.ToUpper(company.NameTH)) == searchNoSpaces {
+			return &company, nil
+		}
+	}
+
 	// Progressive word removal for Thai names
 	words := strings.Fields(name)
 	for len(words) > 0 {
@@ -323,6 +335,13 @@ func (c *Client) GetByName(name string) (*Company, error) {
 	}
 
 	return nil, fmt.Errorf("company not found: %s", name)
+}
+
+// removeAllSpaces strips all whitespace characters from a string.
+// Used for space-normalized matching when portfolio data uses different
+// spacing than SET official records.
+func removeAllSpaces(s string) string {
+	return strings.ReplaceAll(s, " ", "")
 }
 
 // IsThaiName checks if a string contains Thai characters

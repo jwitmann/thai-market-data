@@ -147,6 +147,41 @@ func TestClientGetByName(t *testing.T) {
 	}
 }
 
+func TestClientGetByNameSpaceNormalized(t *testing.T) {
+	dataDir := getDataDir()
+
+	if _, err := os.Stat(dataDir); os.IsNotExist(err) {
+		t.Skip("data directory not found, skipping test")
+	}
+
+	client, err := NewClient(dataDir)
+	if err != nil {
+		t.Fatalf("Failed to create SET client: %v", err)
+	}
+
+	// Test names with missing spaces compared to SET official data
+	// Portfolio data from Finnomena often lacks spaces after "บริษัท" and before "("
+	tests := []struct {
+		name      string
+		wantMatch string // expected English name to be contained in result
+	}{
+		{"บริษัทเดลต้า อีเลคโทรนิคส์(ประเทศไทย) จำกัด(มหาชน)", "DELTA"},
+		{"บริษัทปตท. จำกัด(มหาชน)", "PTT"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			company, err := client.GetByName(tt.name)
+			if err != nil {
+				t.Fatalf("GetByName(%q) error: %v", tt.name, err)
+			}
+			if !strings.Contains(strings.ToUpper(company.NameEN), tt.wantMatch) {
+				t.Errorf("GetByName(%q) = %q, want to contain %q", tt.name, company.NameEN, tt.wantMatch)
+			}
+		})
+	}
+}
+
 func TestClientTranslateName(t *testing.T) {
 	dataDir := getDataDir()
 
@@ -165,6 +200,7 @@ func TestClientTranslateName(t *testing.T) {
 	}{
 		{"หุ้นสามัญของบริษัท ปตท. จำกัด (มหาชน)", "PTT"},
 		{"บริษัท ปตท. จำกัด (มหาชน)", "PTT"},
+		{"หุ้นสามัญของบริษัทเดลต้า อีเลคโทรนิคส์(ประเทศไทย) จำกัด(มหาชน)", "DELTA"},
 		{"English Name Only", "English Name Only"},
 	}
 
