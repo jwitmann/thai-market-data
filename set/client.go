@@ -449,6 +449,32 @@ func (c *Client) GetSETData() *SETData {
 	return c.setData
 }
 
+// fetchOrLoadLocal tries to download from url; if that fails, it falls back
+// to reading a pre-shipped local file from dataDir/defaults/.
+func (c *Client) fetchParseOrFallback(url, localPath string) (map[string]map[string]string, error) {
+	var raw []byte
+	var err error
+
+	raw, err = c.downloadWithRetry(url)
+	if err == nil {
+		parsed, parseErr := c.parseHTMLTable(raw)
+		if parseErr == nil && len(parsed) > 0 {
+			return parsed, nil
+		}
+		log.Printf("[SET] Download from %s parsed to 0 rows or failed: %v; trying local fallback %s", url, parseErr, localPath)
+	} else {
+		log.Printf("[SET] Download failed for %s: %v; trying local fallback %s", url, err, localPath)
+	}
+
+	raw, err = os.ReadFile(localPath)
+	if err != nil {
+		return nil, fmt.Errorf("download failed and local fallback %s unreadable: %w", localPath, err)
+	}
+
+	log.Printf("[SET] Using local fallback: %s", localPath)
+	return c.parseHTMLTable(raw)
+}
+
 func (c *Client) downloadWithRetry(url string) ([]byte, error) {
 	client := &http.Client{
 		Timeout: 30 * time.Second,
@@ -695,34 +721,26 @@ func getID(prefix string, thRecord map[string]string, enRecord map[string]string
 	return prefixID
 }
 
-// FetchAndUpdate downloads latest SET data from official SET website
-// Returns error on failure but existing data remains usable
+// FetchAndUpdate downloads latest SET data from official SET website.
+// If the live download returns data that cannot be parsed, it falls back to
+// local files in dataDir/defaults/.
 func (c *Client) FetchAndUpdate() error {
 	log.Println("[SET] Starting data update from SET website...")
 
+	enPath := filepath.Join(c.dataDir, "defaults", "listedCompanies_en_US.xls")
+	thPath := filepath.Join(c.dataDir, "defaults", "listedCompanies_th_TH.xls")
+
 	log.Printf("[SET] Downloading English data from %s...", SETURLEN)
-	enDataRaw, err := c.downloadWithRetry(SETURLEN)
+	enData, err := c.fetchParseOrFallback(SETURLEN, enPath)
 	if err != nil {
-		return fmt.Errorf("failed to download English data: %w", err)
-	}
-
-	log.Printf("[SET] Downloading Thai data from %s...", SETURLTH)
-	thDataRaw, err := c.downloadWithRetry(SETURLTH)
-	if err != nil {
-		return fmt.Errorf("failed to download Thai data: %w", err)
-	}
-
-	log.Println("[SET] Parsing English data...")
-	enData, err := c.parseHTMLTable(enDataRaw)
-	if err != nil {
-		return fmt.Errorf("failed to parse English HTML: %w", err)
+		return fmt.Errorf("failed to get English data: %w", err)
 	}
 	log.Printf("[SET] Found %d companies in English data", len(enData))
 
-	log.Println("[SET] Parsing Thai data...")
-	thData, err := c.parseHTMLTable(thDataRaw)
+	log.Printf("[SET] Downloading Thai data from %s...", SETURLTH)
+	thData, err := c.fetchParseOrFallback(SETURLTH, thPath)
 	if err != nil {
-		return fmt.Errorf("failed to parse Thai HTML: %w", err)
+		return fmt.Errorf("failed to get Thai data: %w", err)
 	}
 	log.Printf("[SET] Found %d companies in Thai data", len(thData))
 
@@ -751,34 +769,27 @@ func (c *Client) NeedsUpdate() bool {
 	return daysSinceUpdate > 30
 }
 
-// FetchAndSaveNew fetches SET data from the website and saves to the given data directory
-// This is a standalone function to handle the case where no existing data exists
+// FetchAndSaveNew fetches SET data from the website and saves to the given data directory.
+// If the live download returns data that cannot be parsed, it falls back to
+// pre-shipped local files named listedCompanies_en_US.xls and
+// listedCompanies_th_TH.xls in dataDir/defaults/.
 func FetchAndSaveNew(dataDir string) error {
 	client := &Client{dataDir: dataDir}
 
+	enPath := filepath.Join(dataDir, "defaults", "listedCompanies_en_US.xls")
+	thPath := filepath.Join(dataDir, "defaults", "listedCompanies_th_TH.xls")
+
 	log.Printf("[SET] Downloading English data from %s...", SETURLEN)
-	enDataRaw, err := client.downloadWithRetry(SETURLEN)
+	enData, err := client.fetchParseOrFallback(SETURLEN, enPath)
 	if err != nil {
-		return fmt.Errorf("failed to download English data: %w", err)
-	}
-
-	log.Printf("[SET] Downloading Thai data from %s...", SETURLTH)
-	thDataRaw, err := client.downloadWithRetry(SETURLTH)
-	if err != nil {
-		return fmt.Errorf("failed to download Thai data: %w", err)
-	}
-
-	log.Println("[SET] Parsing English data...")
-	enData, err := client.parseHTMLTable(enDataRaw)
-	if err != nil {
-		return fmt.Errorf("failed to parse English HTML: %w", err)
+		return fmt.Errorf("failed to get English data: %w", err)
 	}
 	log.Printf("[SET] Found %d companies in English data", len(enData))
 
-	log.Println("[SET] Parsing Thai data...")
-	thData, err := client.parseHTMLTable(thDataRaw)
+	log.Printf("[SET] Downloading Thai data from %s...", SETURLTH)
+	thData, err := client.fetchParseOrFallback(SETURLTH, thPath)
 	if err != nil {
-		return fmt.Errorf("failed to parse Thai HTML: %w", err)
+		return fmt.Errorf("failed to get Thai data: %w", err)
 	}
 	log.Printf("[SET] Found %d companies in Thai data", len(thData))
 
