@@ -53,6 +53,13 @@ type FundInfo struct {
 	AIMCCategory   string `json:"-"` // Temporary field for parsing, not serialized
 }
 
+// normalizeFundCode normalizes a fund code to a canonical uppercase form.
+// Fund codes are case-insensitive identifiers; normalizing them here (at the
+// boundary) keeps the rest of the system free of case-mismatch bugs.
+func normalizeFundCode(code string) string {
+	return strings.ToUpper(strings.TrimSpace(code))
+}
+
 // NewClient creates a new AIMC client with the given data directory
 func NewClient(dataDir string) (*Client, error) {
 	client := &Client{
@@ -141,32 +148,35 @@ func (c *Client) GetCategoryName(categoryID string) string {
 // GetFundInfo returns legal name, thai name, firm name, and category for a fund code
 // Checks supplement first, then falls back to AIMC mappings
 func (c *Client) GetFundInfo(fundCode string) (legalName, thaiName, firmName, category string) {
+	key := normalizeFundCode(fundCode)
+
 	// Check supplement first
 	if c.supplement != nil {
-		if info, ok := c.supplement.Funds[fundCode]; ok {
-			legalName = info.LegalName
-			thaiName = info.ThaiName
-			firmName = info.FirmName
-			category = c.GetCategoryName(info.AIMCCategoryID)
-			return
+		for code, info := range c.supplement.Funds {
+			if normalizeFundCode(code) == key {
+				legalName = info.LegalName
+				thaiName = info.ThaiName
+				firmName = info.FirmName
+				category = c.GetCategoryName(info.AIMCCategoryID)
+				return
+			}
 		}
 	}
 
 	// Fall back to AIMC mappings
-	if c.mappings == nil {
-		return "", "", "", ""
+	if c.mappings != nil {
+		for code, info := range c.mappings.Funds {
+			if normalizeFundCode(code) == key {
+				legalName = info.LegalName
+				thaiName = info.ThaiName
+				firmName = info.FirmName
+				category = c.mappings.Categories[info.AIMCCategoryID]
+				return
+			}
+		}
 	}
 
-	info, ok := c.mappings.Funds[fundCode]
-	if !ok {
-		return "", "", "", ""
-	}
-
-	legalName = info.LegalName
-	thaiName = info.ThaiName
-	firmName = info.FirmName
-	category = c.mappings.Categories[info.AIMCCategoryID]
-	return
+	return "", "", "", ""
 }
 
 // GetCategories returns all available category names from both AIMC and supplement
@@ -209,9 +219,10 @@ func (c *Client) GetFundsByCategory(categoryName string) []string {
 			if name == categoryName {
 				// Find all funds in this category from supplement
 				for code, info := range c.supplement.Funds {
-					if info.AIMCCategoryID == id && !seen[code] {
-						seen[code] = true
-						funds = append(funds, code)
+					nk := normalizeFundCode(code)
+					if info.AIMCCategoryID == id && !seen[nk] {
+						seen[nk] = true
+						funds = append(funds, nk)
 					}
 				}
 				break
@@ -233,9 +244,10 @@ func (c *Client) GetFundsByCategory(categoryName string) []string {
 		// Find all funds in this category
 		if categoryID != "" {
 			for code, info := range c.mappings.Funds {
-				if info.AIMCCategoryID == categoryID && !seen[code] {
-					seen[code] = true
-					funds = append(funds, code)
+				nk := normalizeFundCode(code)
+				if info.AIMCCategoryID == categoryID && !seen[nk] {
+					seen[nk] = true
+					funds = append(funds, nk)
 				}
 			}
 		}
@@ -254,9 +266,10 @@ func (c *Client) GetFundsByCompany(companyName string) []string {
 	// Check supplement first
 	if c.supplement != nil {
 		for code, info := range c.supplement.Funds {
-			if strings.ToUpper(info.FirmName) == companyUpper && !seen[code] {
-				seen[code] = true
-				funds = append(funds, code)
+			nk := normalizeFundCode(code)
+			if strings.ToUpper(info.FirmName) == companyUpper && !seen[nk] {
+				seen[nk] = true
+				funds = append(funds, nk)
 			}
 		}
 	}
@@ -264,9 +277,10 @@ func (c *Client) GetFundsByCompany(companyName string) []string {
 	// Check AIMC mappings
 	if c.mappings != nil {
 		for code, info := range c.mappings.Funds {
-			if strings.ToUpper(info.FirmName) == companyUpper && !seen[code] {
-				seen[code] = true
-				funds = append(funds, code)
+			nk := normalizeFundCode(code)
+			if strings.ToUpper(info.FirmName) == companyUpper && !seen[nk] {
+				seen[nk] = true
+				funds = append(funds, nk)
 			}
 		}
 	}
@@ -284,9 +298,10 @@ func (c *Client) GetFundsByCompanyFuzzy(partialName string) []string {
 	// Check supplement first
 	if c.supplement != nil {
 		for code, info := range c.supplement.Funds {
-			if strings.Contains(strings.ToUpper(info.FirmName), partialUpper) && !seen[code] {
-				seen[code] = true
-				funds = append(funds, code)
+			nk := normalizeFundCode(code)
+			if strings.Contains(strings.ToUpper(info.FirmName), partialUpper) && !seen[nk] {
+				seen[nk] = true
+				funds = append(funds, nk)
 			}
 		}
 	}
@@ -294,9 +309,10 @@ func (c *Client) GetFundsByCompanyFuzzy(partialName string) []string {
 	// Check AIMC mappings
 	if c.mappings != nil {
 		for code, info := range c.mappings.Funds {
-			if strings.Contains(strings.ToUpper(info.FirmName), partialUpper) && !seen[code] {
-				seen[code] = true
-				funds = append(funds, code)
+			nk := normalizeFundCode(code)
+			if strings.Contains(strings.ToUpper(info.FirmName), partialUpper) && !seen[nk] {
+				seen[nk] = true
+				funds = append(funds, nk)
 			}
 		}
 	}
@@ -312,9 +328,10 @@ func (c *Client) GetAllFunds() []string {
 	// Add supplement funds first
 	if c.supplement != nil {
 		for code := range c.supplement.Funds {
-			if !seen[code] {
-				seen[code] = true
-				funds = append(funds, code)
+			nk := normalizeFundCode(code)
+			if !seen[nk] {
+				seen[nk] = true
+				funds = append(funds, nk)
 			}
 		}
 	}
@@ -322,9 +339,10 @@ func (c *Client) GetAllFunds() []string {
 	// Add AIMC funds
 	if c.mappings != nil {
 		for code := range c.mappings.Funds {
-			if !seen[code] {
-				seen[code] = true
-				funds = append(funds, code)
+			nk := normalizeFundCode(code)
+			if !seen[nk] {
+				seen[nk] = true
+				funds = append(funds, nk)
 			}
 		}
 	}
